@@ -33,6 +33,12 @@
 .NOTES
   Interrompibile in qualsiasi momento con CTRL+C: il carico viene fermato
   e la memoria rilasciata comunque.
+
+  Temperatura: lo script prova a leggere il sensore termico ACPI di Windows
+  (namespace root/wmi). Non tutti i PC lo espongono - molti desktop non lo
+  hanno - e di norma serve PowerShell da amministratore; e' una temperatura
+  "di sistema", non quella per-core. Per letture precise affianca al test un
+  monitor come LibreHardwareMonitor o HWiNFO.
 #>
 [CmdletBinding()]
 param(
@@ -59,6 +65,20 @@ try {
     $ramLiberaMB = [math]::Floor($os.FreePhysicalMemory / 1KB)
 } catch { }
 
+# ------------------------------------------------ sensore temperatura (ACPI)
+# Best effort: molti PC (soprattutto desktop) non espongono questo sensore e
+# di norma la lettura richiede diritti di amministratore.
+function Leggi-Temperatura {
+    try {
+        $zone = Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop
+        $max = ($zone | Measure-Object -Property CurrentTemperature -Maximum).Maximum
+        # il valore ACPI e' in decimi di kelvin
+        if ($max -gt 0) { return [math]::Round($max / 10.0 - 273.15, 1) }
+    } catch { }
+    return $null
+}
+$temperaturaAvvio = Leggi-Temperatura
+
 Write-Host ''
 Write-Host '=============================================' -ForegroundColor Cyan
 Write-Host '  PCStress - stress test nativo per Windows'  -ForegroundColor Cyan
@@ -66,6 +86,12 @@ Write-Host '=============================================' -ForegroundColor Cyan
 Write-Host "  CPU        : $nomeCpu ($nCore core logici)"
 Write-Host "  RAM totale : $ramTotGB GB (libera: $([math]::Round($ramLiberaMB/1024,1)) GB)"
 Write-Host "  Test       : $DurataMinuti min - CPU $CaricoCPU% su tutti i core - RAM $MemoriaMB MB"
+if ($null -ne $temperaturaAvvio) {
+    Write-Host "  Temperatura: $temperaturaAvvio gradi C (sensore ACPI di sistema)"
+} else {
+    Write-Host '  Temperatura: sensore ACPI non disponibile (normale su molti desktop;' -ForegroundColor Gray
+    Write-Host '               prova da amministratore, o affianca LibreHardwareMonitor/HWiNFO)' -ForegroundColor Gray
+}
 Write-Host ''
 
 # non prosciugare la memoria: mai oltre l'80% della RAM libera
@@ -168,6 +194,7 @@ try {
     $campioniCarico = New-Object System.Collections.Generic.List[double]
     $contatore = 0
     $interrotto = $false
+    $tempMassima = $null
 
     # CTRL+C gestito a mano: cosi' il report finale viene stampato comunque
     $ctrlCGestito = $false
@@ -215,6 +242,12 @@ try {
                 $caricoAttuale = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
             } catch { }
             if ($null -ne $caricoAttuale) { $campioniCarico.Add([double]$caricoAttuale) }
+            $temp = if ($null -ne $temperaturaAvvio) { Leggi-Temperatura } else { $null }
+            $testoTemp = ''
+            if ($null -ne $temp) {
+                if ($null -eq $tempMassima -or $temp -gt $tempMassima) { $tempMassima = $temp }
+                $testoTemp = "  |  temp: $temp C"
+            }
             $rimasto = [math]::Max(0, [math]::Ceiling(($fine - (Get-Date)).TotalSeconds))
             $testoCarico = if ($null -ne $caricoAttuale) { "$([math]::Round($caricoAttuale))%" } else { 'n/d' }
             $trascorso = ((Get-Date) - $avvio).TotalSeconds
@@ -223,9 +256,9 @@ try {
             $minRimasti = [int][math]::Floor($rimasto / 60)
             $secRimasti = [int]($rimasto % 60)
             Write-Progress -Activity 'PCStress - test in corso' `
-                -Status ("CPU: {0}  |  RAM occupata: {1} MB  |  blocchi rilevati: {2}  |  restano {3}:{4:d2}" -f $testoCarico, $ramOccupata, $blocchiRilevati, $minRimasti, $secRimasti) `
+                -Status ("CPU: {0}  |  RAM occupata: {1} MB  |  blocchi rilevati: {2}{3}  |  restano {4}:{5:d2}" -f $testoCarico, $ramOccupata, $blocchiRilevati, $testoTemp, $minRimasti, $secRimasti) `
                 -PercentComplete $percento
-            Scrivi-Log "vivo - CPU: $testoCarico, blocchi: $blocchiRilevati"
+            Scrivi-Log "vivo - CPU: $testoCarico, blocchi: $blocchiRilevati$testoTemp"
         }
     }
     Write-Progress -Activity 'PCStress - test in corso' -Completed
@@ -262,6 +295,14 @@ Write-Host '=============================================' -ForegroundColor Cyan
 Write-Host "  Durata effettiva : $durataEffettiva min$(if ($interrotto) { ' (interrotto manualmente)' })"
 if ($null -ne $caricoMedio) { Write-Host "  Carico CPU medio : $caricoMedio%" }
 Write-Host "  RAM occupata     : $ramOccupata MB"
+if ($null -ne $tempMassima) {
+    Write-Host "  Temperatura max  : $tempMassima gradi C (sensore ACPI di sistema)"
+    if ($tempMassima -ge 90) {
+        Write-Host '  ATTENZIONE: temperatura molto alta - controlla ventole e raffreddamento.' -ForegroundColor Yellow
+    }
+} else {
+    Write-Host '  Temperatura max  : non disponibile (sensore ACPI assente o servono diritti admin)'
+}
 Write-Host "  Blocchi rilevati : $blocchiRilevati"
 if ($blocchiRilevati -gt 0) { Write-Host "  Blocco piu' lungo: $([math]::Round($bloccoMassimoMs/1000.0,1)) s" }
 Write-Host ''
