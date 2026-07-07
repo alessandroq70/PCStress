@@ -194,7 +194,15 @@
           <option value="1024" selected>1 GB</option>
           <option value="2048">2 GB</option>
           <option value="3072">3 GB</option>
+          <option value="4096">4 GB (sperimentale)</option>
+          <option value="6144">6 GB (sperimentale)</option>
+          <option value="8192">8 GB (sperimentale)</option>
         </select>
+        <div class="nota" id="nota-ram" style="display:none;margin-top:6px">
+          ⚠ Oltre 3 GB si supera la zona di comfort del browser: la scheda potrebbe chiudersi
+          di colpo per il limite di memoria del browser stesso — in quel caso NON è un difetto del PC.
+          Per lo stress serio della RAM usa lo script nativo (nessun limite).
+        </div>
       </div>
     </div>
     <div class="moduli">
@@ -264,6 +272,13 @@
     ed eseguilo con: <code>powershell -ExecutionPolicy Bypass -File .\stress-nativo.ps1</code>.
     Se la pagina, il browser o l'intero PC si bloccano o si riavviano durante il test,
     il computer <strong>non</strong> è stabile sotto carico.
+    <br><br>
+    <strong>Temperature:</strong> una pagina web non può leggere i sensori termici di CPU e GPU
+    (i browser non lo consentono, per sicurezza). Per vedere le temperature durante il test affianca
+    un monitor gratuito come <em>LibreHardwareMonitor</em> o <em>HWiNFO</em> sul PC in prova; lo script
+    nativo prova comunque a leggere il sensore ACPI di sistema, dove presente. Un segnale indiretto lo
+    dà anche questa pagina: se le operazioni/s della CPU calano progressivamente durante il test, il
+    processore si sta surriscaldando (thermal throttling).
   </footer>
 </main>
 
@@ -1127,6 +1142,11 @@ $('btn-nuovo').addEventListener('click', () => {
 });
 $('btn-report').addEventListener('click', scaricaReport);
 
+// avviso per le opzioni RAM sperimentali
+$('sel-ram').addEventListener('change', () => {
+  $('nota-ram').style.display = parseInt($('sel-ram').value, 10) > 3072 ? 'block' : 'none';
+});
+
 // disco: richiede un contesto sicuro del browser (https, localhost o file
 // locale); NON è disponibile aprendo la pagina da un altro PC via http://<ip>
 if (!(navigator.storage && navigator.storage.getDirectory)) {
@@ -1154,9 +1174,13 @@ try {
         b.textContent = 'ℹ Il test precedente è stato interrotto chiudendo la pagina prima della fine (nessun crash rilevato).';
         b.style.display = 'block';
       } else {
-        $('banner-crash-dett').textContent =
+        let dett =
           ' Era iniziato alle ' + new Date(s.inizio).toLocaleTimeString('it-IT') +
           '; ultimo segnale di vita alle ' + new Date(s.ultimoSegnale || s.inizio).toLocaleTimeString('it-IT') + '.';
+        if (s.config && s.config.ram && s.config.ramMB > 3072) {
+          dett += ' Attenzione: il test usava un\'occupazione RAM sperimentale (oltre 3 GB), quindi la chiusura potrebbe dipendere dal limite di memoria del browser e non dal PC — ripeti il test con 3 GB o meno prima di trarre conclusioni.';
+        }
+        $('banner-crash-dett').textContent = dett;
         b.style.display = 'block';
       }
     }

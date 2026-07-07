@@ -96,10 +96,35 @@ Un consiglio pratico: un check rapido da 10 minuti scova i problemi grossi;
 per una diagnosi seria (PC nuovo, overclock, PC che si riavvia "a caso") fai
 almeno 30–60 minuti con carico al 100%.
 
+## E le temperature?
+
+Una pagina web **non può leggere i sensori termici** di CPU, GPU o scheda
+madre: i browser lo vietano per sicurezza, non esiste un'API per farlo. Per
+questo nei grafici della web app non ci sono le temperature. Come rimediare:
+
+- **Il metodo migliore**: mentre PCStress genera il carico, tieni aperto sul
+  PC in prova un monitor hardware gratuito come
+  [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+  o [HWiNFO](https://www.hwinfo.com/): loro leggono le temperature per-core
+  in tempo reale, PCStress fa sudare la macchina.
+- **Lo script nativo** prova a leggere il sensore termico ACPI di Windows e,
+  dove presente, mostra la temperatura durante il test e la massima nel
+  report. È una lettura "di sistema" (non per-core), spesso disponibile solo
+  sui portatili e in genere richiede PowerShell da amministratore.
+- **Indizio indiretto nella web app**: se il grafico CPU (operazioni/s) cala
+  progressivamente durante il test, il processore si sta surriscaldando e
+  riduce la frequenza (*thermal throttling*); in tal caso il verdetto passa a
+  STABILE CON RISERVA.
+
 ## Avvertenze
 
 - Il test porta **davvero** il computer al limite: ventole al massimo e
   temperature alte sono normali. Salva e chiudi i documenti prima di partire.
+- Nella web app le opzioni RAM oltre i 3 GB sono marcate **sperimentali**: i
+  browser tollerano male allocazioni così grandi in una singola scheda e
+  potrebbero chiuderla di colpo — un'eventuale chiusura in quel caso è un
+  limite del browser, non un difetto del PC. Per lo stress serio della RAM
+  usa lo script nativo (es. `-MemoriaMB 16384` per 16 GB).
 - Su un portatile tienilo collegato alla corrente e su una superficie rigida.
 - Se il PC ha già problemi di raffreddamento noti, parti dall'intensità Media.
 - La web app non invia nulla in rete: tutto il test gira in locale nel browser.
