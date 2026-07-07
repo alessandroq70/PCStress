@@ -27,8 +27,11 @@ pagina web).
 ### A) Sul PC da testare, senza rete
 
 Copia `index.html` sul PC e aprilo con doppio clic (Edge o Chrome). Configura
-durata e moduli e premi **Avvia il test**. *(Aperto da file locale il modulo
-Disco non è disponibile: serve il server del punto B.)*
+durata e moduli e premi **Avvia il test**. *(Il modulo Disco richiede un
+"contesto sicuro" del browser: è attivo aprendo la pagina da `http://localhost`
+sul PC che fa da server — e in genere anche dal file locale — ma **non**
+aprendola da un altro PC via `http://<ip>`; in quel caso la casella risulta
+disattivata e gli altri moduli funzionano normalmente.)*
 
 ### B) Da un altro PC della rete (web app condivisa)
 
@@ -46,6 +49,9 @@ Note:
 - per essere raggiungibile dagli altri PC, il server va avviato in un
   PowerShell **da amministratore** (aggiunge da solo la regola del firewall);
   senza diritti admin funziona comunque, ma solo da `http://localhost:8080/`;
+- la regola del firewall vale per le reti di tipo **Privato/Dominio**: se la
+  rete è contrassegnata come "Rete pubblica" (predefinito di Windows per le
+  nuove reti), impostala su Privata in Impostazioni → Rete e Internet;
 - in alternativa, con Node.js installato: `node server.js`
   (oppure, con Python: `python -m http.server 8080`).
 
@@ -67,7 +73,8 @@ powershell -ExecutionPolicy Bypass -File .\stress-nativo.ps1 -CaricoCPU 75
 
 Si interrompe in ogni momento con `CTRL+C` (il carico viene fermato e la
 memoria rilasciata). Scrive un log dettagliato `pcstress-log-*.txt` accanto
-allo script.
+allo script (o in `%TEMP%` se quella cartella non è scrivibile: il percorso
+esatto viene mostrato a schermo all'avvio).
 
 ## Come leggere il risultato
 

@@ -60,7 +60,14 @@ try {
     $listener.Close()
     $listener = New-Object System.Net.HttpListener
     $listener.Prefixes.Add("http://localhost:$Porta/")
-    $listener.Start()
+    try {
+        $listener.Start()
+    } catch {
+        Write-Host "ERRORE: impossibile aprire la porta $Porta (probabilmente e' gia' usata da un altro programma)." -ForegroundColor Red
+        Write-Host "Riprova con un'altra porta, ad esempio:" -ForegroundColor Yellow
+        Write-Host "    powershell -ExecutionPolicy Bypass -File .\avvia-server.ps1 -Porta 8090" -ForegroundColor Yellow
+        exit 1
+    }
     $soloLocale = $true
 }
 
@@ -89,9 +96,11 @@ Write-Host ''
 
 if ($soloLocale) {
     Write-Warning 'Server raggiungibile SOLO da questo PC (niente diritti amministratore).'
-    Write-Host '  Per aprirlo alla rete locale, in un PowerShell da AMMINISTRATORE esegui:' -ForegroundColor Yellow
+    Write-Host '  Per aprirlo alla rete locale, in un PowerShell da AMMINISTRATORE esegui questi due comandi' -ForegroundColor Yellow
+    Write-Host '  (binding di rete + regola firewall), poi rilancia lo script:' -ForegroundColor Yellow
     Write-Host "      netsh http add urlacl url=http://+:$Porta/ user=$env:USERNAME" -ForegroundColor Yellow
-    Write-Host '  oppure riavvia questo script come amministratore.' -ForegroundColor Yellow
+    Write-Host "      netsh advfirewall firewall add rule name=`"PCStress server web`" dir=in action=allow protocol=TCP localport=$Porta" -ForegroundColor Yellow
+    Write-Host '  In alternativa, riavvia direttamente questo script come amministratore: fa tutto da solo.' -ForegroundColor Yellow
 } else {
     Write-Host '  Apri il test dagli ALTRI PC della rete:' -ForegroundColor Green
     $indirizzi = @()
@@ -151,7 +160,8 @@ try {
             }
 
             if ($risposta.StatusCode -ge 400) {
-                $msg = [Text.Encoding]::UTF8.GetBytes("$($risposta.StatusCode) - risorsa non trovata")
+                $testoErrore = if ($risposta.StatusCode -eq 403) { 'accesso negato' } else { 'risorsa non trovata' }
+                $msg = [Text.Encoding]::UTF8.GetBytes("$($risposta.StatusCode) - $testoErrore")
                 $risposta.ContentType = 'text/plain; charset=utf-8'
                 $risposta.ContentLength64 = $msg.Length
                 $risposta.OutputStream.Write($msg, 0, $msg.Length)

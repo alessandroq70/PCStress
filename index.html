@@ -147,6 +147,7 @@
 
   footer { max-width: 980px; margin: 26px auto 0; padding: 0 16px 40px; color: var(--testo-muto); font-size: 12.5px; }
   footer a { color: var(--serie-cpu); }
+  footer code { background: var(--superficie); border: 1px solid var(--bordo); padding: 1px 6px; border-radius: 4px; }
   a.scarica { color: var(--serie-cpu); font-size: 13.5px; }
 </style>
 </head>
@@ -260,7 +261,8 @@
     Il test gira interamente nel browser di questo computer: nulla viene inviato in rete.
     Un browser non può però saturare la macchina quanto un programma nativo: per lo stress più profondo
     (consigliato per diagnosi serie) <a class="scarica" href="stress-nativo.ps1" download>scarica lo script nativo per Windows</a>
-    ed eseguilo in PowerShell. Se la pagina, il browser o l'intero PC si bloccano o si riavviano durante il test,
+    ed eseguilo con: <code>powershell -ExecutionPolicy Bypass -File .\stress-nativo.ps1</code>.
+    Se la pagina, il browser o l'intero PC si bloccano o si riavviano durante il test,
     il computer <strong>non</strong> è stabile sotto carico.
   </footer>
 </main>
@@ -372,12 +374,12 @@ onmessage = (e) => {
 const SRC_DISCO = String.raw`
 'use strict';
 let attivo = false;
-async function avvia() {
+async function avvia(nomeFile) {
   attivo = true;
   let root, handle;
   try {
     root = await navigator.storage.getDirectory();
-    const file = await root.getFileHandle('pcstress-disco.bin', { create: true });
+    const file = await root.getFileHandle(nomeFile, { create: true });
     handle = await file.createSyncAccessHandle();
   } catch (err) {
     postMessage({ tipo: 'disco-nd', errore: String(err) });
@@ -404,12 +406,12 @@ async function avvia() {
   } catch (err) {
     postMessage({ tipo: 'disco-errore', errore: String(err) });
   } finally {
-    try { handle.flush(); handle.close(); await root.removeEntry('pcstress-disco.bin'); } catch (e) {}
+    try { handle.flush(); handle.close(); await root.removeEntry(nomeFile); } catch (e) {}
     close();
   }
 }
 onmessage = (e) => {
-  if (e.data.cmd === 'avvia') avvia();
+  if (e.data.cmd === 'avvia') avvia(e.data.file);
   else if (e.data.cmd === 'ferma') attivo = false;
 };
 `;
@@ -518,6 +520,7 @@ function formattaNumero(v) {
 /* ---------------- modulo GPU (WebGL) ---------------- */
 const Gpu = {
   attivo: false, gl: null, canvas: null, raf: 0, frame: 0, contestiPersi: 0, tAvvio: 0,
+  listenerPronto: false,
   avvia(intensita) {
     this.canvas = $('canvas-gpu');
     this.canvas.style.display = 'block';
@@ -526,12 +529,22 @@ const Gpu = {
     const gl = this.canvas.getContext('webgl', { powerPreference: 'high-performance' })
             || this.canvas.getContext('experimental-webgl');
     if (!gl) { log('GPU: WebGL non disponibile su questo browser — modulo saltato', 'avviso'); this.canvas.style.display = 'none'; return false; }
+    if (gl.isContextLost && gl.isContextLost()) {
+      log('GPU: il contesto grafico risulta perso (crash precedente del driver) — ricarica la pagina per ritestare la GPU', 'avviso');
+      this.canvas.style.display = 'none';
+      return false;
+    }
     this.gl = gl;
-    this.canvas.addEventListener('webglcontextlost', (e) => {
-      e.preventDefault();
-      this.contestiPersi++;
-      log('GPU: CONTESTO GRAFICO PERSO — il driver video si è ripristinato o è andato in crash', 'critico');
-    });
+    if (!this.listenerPronto) {
+      this.listenerPronto = true;
+      this.canvas.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+        this.contestiPersi++;
+        this.attivo = false;
+        if (this.raf) cancelAnimationFrame(this.raf);
+        log('GPU: CONTESTO GRAFICO PERSO — il driver video si è ripristinato o è andato in crash', 'critico');
+      });
+    }
     const vsrc = 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }';
     const iter = intensita >= 1 ? 700 : intensita >= 0.75 ? 400 : 200;
     const fsrc =
@@ -598,9 +611,18 @@ const Gpu = {
 };
 
 /* ---------------- sonda di reattività ---------------- */
+function rinfrescaBattiti() {
+  // dopo un congelamento del thread principale i messaggi dei worker erano
+  // solo in coda, non persi: azzera i timestamp per non dichiararli morti
+  // (i worker già dichiarati morti, marcati Infinity, restano tali)
+  const ora = performance.now();
+  Test.battiti = Test.battiti.map(b => b === Infinity ? Infinity : ora);
+}
+
 const Sonda = {
   maxLag: 0, lagSecondo: 0, rallentamenti: 0, blocchi: 0, maxBlocco: 0,
-  azzera() { this.maxLag = 0; this.lagSecondo = 0; this.rallentamenti = 0; this.blocchi = 0; this.maxBlocco = 0; },
+  saltaProssimo: false,
+  azzera() { this.maxLag = 0; this.lagSecondo = 0; this.rallentamenti = 0; this.blocchi = 0; this.maxBlocco = 0; this.saltaProssimo = false; },
   avvia() {
     const PASSO = 200;
     let atteso = performance.now() + PASSO;
@@ -609,14 +631,26 @@ const Sonda = {
       const ora = performance.now();
       const lag = ora - atteso;
       atteso = ora + PASSO;
-      if (document.visibilityState === 'visible' && lag > 0) {
+      // durante l'allocazione iniziale della RAM qualche scatto è fisiologico
+      const allocazioneRam = Test.config && Test.config.ram && !Test.ramCompleta && !Test.ramLimite;
+      if (this.saltaProssimo || document.visibilityState !== 'visible') {
+        // scheda nascosta, o primo tick dopo un cambio di visibilità: il
+        // ritardo viene dal throttling del browser, non dal PC
+        this.saltaProssimo = false;
+      } else if (lag > 15000) {
+        // pausa enorme: quasi sempre sospensione del sistema (coperchio
+        // chiuso) o scheda congelata dal browser, non un blocco reale
+        log('Pausa di ' + Math.round(lag / 1000) + ' s rilevata (sospensione del PC o scheda congelata dal browser): campione ignorato', 'avviso');
+        rinfrescaBattiti();
+      } else if (lag > 0) {
         if (lag > this.maxLag) this.maxLag = lag;
         if (lag > this.lagSecondo) this.lagSecondo = lag;
-        if (lag > 5000) {
+        if (lag > 5000 && !allocazioneRam) {
           this.blocchi++;
           if (lag > this.maxBlocco) this.maxBlocco = lag;
           log('BLOCCO: interfaccia congelata per ' + (lag / 1000).toFixed(1) + ' s', 'critico');
-        } else if (lag > 1000) {
+          rinfrescaBattiti();
+        } else if (lag > 1000 && !allocazioneRam) {
           this.rallentamenti++;
           log('Rallentamento grave: interfaccia ferma per ' + Math.round(lag) + ' ms', 'avviso');
         }
@@ -728,13 +762,16 @@ async function avviaTest() {
     [grafCpu, grafFps, grafLag, grafRam].forEach(g => { g.dati = []; g.disegna(); });
   }
 
-  // sentinella anti-crash: se al prossimo caricamento è ancora "in-corso", il test è morto male
-  localStorage.setItem(SENTINELLA, JSON.stringify({ inizio: Date.now(), ultimoSegnale: Date.now(), config: cfg }));
+  // sentinella anti-crash: se al prossimo caricamento è ancora presente e
+  // "fredda", il test è morto male (crash della pagina o del sistema)
+  Test.sentinella = { inizio: Date.now(), ultimoSegnale: Date.now(), config: cfg };
+  try { localStorage.setItem(SENTINELLA, JSON.stringify(Test.sentinella)); } catch (e) {}
   Test.timerSentinella = setInterval(() => {
     try {
-      const s = JSON.parse(localStorage.getItem(SENTINELLA) || '{}');
-      s.ultimoSegnale = Date.now();
-      localStorage.setItem(SENTINELLA, JSON.stringify(s));
+      // riscrive sempre il record completo tenuto in memoria: una chiave
+      // manipolata da un'altra scheda viene così auto-riparata
+      Test.sentinella.ultimoSegnale = Date.now();
+      localStorage.setItem(SENTINELLA, JSON.stringify(Test.sentinella));
     } catch (e) {}
   }, 5000);
 
@@ -763,6 +800,7 @@ async function avviaTest() {
         }
       };
       w.onerror = (e) => {
+        e.preventDefault(); // evita il doppio conteggio come errore di pagina
         Test.workerMorti++;
         log('CPU: il worker #' + (idx + 1) + ' è andato in errore (' + (e.message || 'sconosciuto') + ')', 'critico');
       };
@@ -789,6 +827,7 @@ async function avviaTest() {
       }
     };
     Test.ramWorker.onerror = (e) => {
+      e.preventDefault(); // evita il doppio conteggio come errore di pagina
       Test.workerMorti++;
       log('RAM: il worker di memoria è andato in errore (' + (e.message || 'probabile esaurimento memoria') + ')', 'critico');
     };
@@ -810,7 +849,9 @@ async function avviaTest() {
       else if (m.tipo === 'disco-nd') { log('Disco: archiviazione privata non disponibile — modulo saltato (' + m.errore + ')', 'avviso'); Test.discoMBs = null; }
       else if (m.tipo === 'disco-errore') { Test.discoErrori++; log('Disco: ERRORE di scrittura (' + m.errore + ')', 'critico'); }
     };
-    Test.discoWorker.postMessage({ cmd: 'avvia' });
+    // nome unico per esecuzione: il worker precedente potrebbe non aver
+    // ancora rilasciato il suo handle esclusivo sul file
+    Test.discoWorker.postMessage({ cmd: 'avvia', file: 'pcstress-disco-' + Date.now() + '.bin' });
     log('Disco: scrittura continua avviata (file temporaneo da 256 MB)');
   }
 
@@ -836,7 +877,7 @@ function campiona() {
       const ora = performance.now();
       Test.battiti.forEach((b, i) => {
         if (ora - b > 8000) {
-          Test.battiti[i] = ora; // non ripetere l'avviso a ogni campione
+          Test.battiti[i] = Infinity; // conta una sola volta, finché non torna a battere
           Test.workerMorti++;
           log('CPU: il worker #' + (i + 1) + ' non risponde da più di 8 s', 'critico');
         }
@@ -907,7 +948,8 @@ function fermaTest(manuale) {
   Test.esitoManuale = manuale;
   clearInterval(Test.timerCampione);
   clearInterval(Test.timerSentinella);
-  localStorage.removeItem(SENTINELLA);
+  Test.sentinella = null;
+  try { localStorage.removeItem(SENTINELLA); } catch (e) {}
 
   Test.workers.forEach(w => { try { w.postMessage({ cmd: 'ferma' }); } catch (e) {} });
   Test.workers = [];
@@ -951,7 +993,9 @@ function mostraVerdetto() {
     motivi.push(Test.discoErrori + ' errore/i di scrittura su disco.');
   }
   if (livello === 'ok') {
-    if (Sonda.rallentamenti > 3 || Sonda.maxLag > 3000) {
+    // la soglia di tolleranza cresce con la durata: ~3 episodi ogni 10 minuti
+    const sogliaRallentamenti = Math.max(3, Math.round(Test.config.durata / 600 * 3));
+    if (Sonda.rallentamenti > sogliaRallentamenti || Sonda.maxLag > 3000) {
       livello = 'avviso';
       motivi.push('Rallentamenti marcati dell\'interfaccia (' + Sonda.rallentamenti + ' episodi oltre 1 s, picco ' + Math.round(Sonda.maxLag) + ' ms): possibile surriscaldamento o throttling.');
     }
@@ -1045,8 +1089,22 @@ window.addEventListener('unhandledrejection', (e) => {
 window.addEventListener('beforeunload', (e) => {
   if (Test.inCorso) { e.preventDefault(); e.returnValue = ''; }
 });
+window.addEventListener('pagehide', () => {
+  // pagehide scatta su chiusura/navigazione volontaria ma NON su crash,
+  // blackout o blocco totale: permette di distinguere i due casi al riavvio
+  if (Test.inCorso && Test.sentinella) {
+    try {
+      Test.sentinella.chiusuraPagina = Date.now();
+      localStorage.setItem(SENTINELLA, JSON.stringify(Test.sentinella));
+    } catch (e) {}
+  }
+});
 document.addEventListener('visibilitychange', async () => {
   if (!Test.inCorso) return;
+  // in entrambe le direzioni: il primo tick dopo il cambio porta con sé il
+  // ritardo del throttling del browser e non va contato come blocco
+  Sonda.saltaProssimo = true;
+  rinfrescaBattiti();
   if (document.visibilityState === 'hidden') {
     log('Scheda in secondo piano: le misure di reattività e GPU sono sospese — riportala in primo piano', 'avviso');
   } else {
@@ -1069,23 +1127,39 @@ $('btn-nuovo').addEventListener('click', () => {
 });
 $('btn-report').addEventListener('click', scaricaReport);
 
-// disco: disponibile solo in contesti sicuri (https o localhost), non da file://
+// disco: richiede un contesto sicuro del browser (https, localhost o file
+// locale); NON è disponibile aprendo la pagina da un altro PC via http://<ip>
 if (!(navigator.storage && navigator.storage.getDirectory)) {
   $('chk-disco').checked = false;
   $('chk-disco').disabled = true;
   $('lbl-disco').classList.add('disab');
-  $('lbl-disco').title = 'Non disponibile: apri la pagina tramite il server (http://…) per testare il disco';
+  $('lbl-disco').title = 'Non disponibile su questo indirizzo: funziona aprendo la pagina da http://localhost sul PC che fa da server, o dal file locale';
 }
 
 // sentinella: il test precedente è finito male?
 try {
   const s = JSON.parse(localStorage.getItem(SENTINELLA) || 'null');
   if (s && s.inizio) {
-    $('banner-crash-dett').textContent =
-      ' Era iniziato alle ' + new Date(s.inizio).toLocaleTimeString('it-IT') +
-      '; ultimo segnale di vita alle ' + new Date(s.ultimoSegnale || s.inizio).toLocaleTimeString('it-IT') + '.';
-    $('banner-crash').style.display = 'block';
-    localStorage.removeItem(SENTINELLA);
+    // una scheda nascosta aggiorna il battito anche solo 1 volta/min:
+    // sotto i 70 s la chiave può appartenere a un test VIVO in un'altra
+    // scheda, quindi non va né segnalata né cancellata
+    const eta = Date.now() - (s.ultimoSegnale || s.inizio);
+    if (eta > 70000) {
+      localStorage.removeItem(SENTINELLA);
+      const b = $('banner-crash');
+      if (s.chiusuraPagina) {
+        // la pagina è stata chiusa volontariamente: nota, non allarme
+        b.style.borderColor = 'var(--stato-avviso)';
+        b.style.background = 'rgba(250,178,25,0.10)';
+        b.textContent = 'ℹ Il test precedente è stato interrotto chiudendo la pagina prima della fine (nessun crash rilevato).';
+        b.style.display = 'block';
+      } else {
+        $('banner-crash-dett').textContent =
+          ' Era iniziato alle ' + new Date(s.inizio).toLocaleTimeString('it-IT') +
+          '; ultimo segnale di vita alle ' + new Date(s.ultimoSegnale || s.inizio).toLocaleTimeString('it-IT') + '.';
+        b.style.display = 'block';
+      }
+    }
   }
 } catch (e) {}
 

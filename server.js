@@ -29,11 +29,18 @@ const TIPI_MIME = {
   '.ico': 'image/x-icon',
 };
 
+// un input imprevisto non deve buttare giù il server per tutti
+process.on('uncaughtException', (e) => { console.error('Errore non gestito:', e.message); });
+
 const server = http.createServer((req, res) => {
   let percorso;
   try {
     percorso = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   } catch (e) {
+    res.writeHead(400); res.end('400'); return;
+  }
+  // un byte nullo nel percorso fa lanciare fs.stat in modo sincrono
+  if (percorso.indexOf('\u0000') !== -1) {
     res.writeHead(400); res.end('400'); return;
   }
   if (percorso.endsWith('/')) percorso += 'index.html';

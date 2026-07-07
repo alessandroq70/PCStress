@@ -69,8 +69,10 @@ Write-Host "  Test       : $DurataMinuti min - CPU $CaricoCPU% su tutti i core -
 Write-Host ''
 
 # non prosciugare la memoria: mai oltre l'80% della RAM libera
+# (clamp a 64 MB: ValidateRange resta attaccato alla variabile e una
+#  riassegnazione sotto il minimo farebbe esplodere lo script)
 if ($ramLiberaMB -gt 0 -and $MemoriaMB -gt $ramLiberaMB * 0.8) {
-    $MemoriaMB = [math]::Floor($ramLiberaMB * 0.8)
+    $MemoriaMB = [int][math]::Max(64, [math]::Floor($ramLiberaMB * 0.8))
     Write-Warning "RAM richiesta troppo alta: ridotta a $MemoriaMB MB (80% della memoria libera)."
 }
 
@@ -88,8 +90,10 @@ catch { $cartellaLog = $env:TEMP }
 $fileLog = Join-Path $cartellaLog ("pcstress-log-{0}.txt" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 
 function Scrivi-Log([string]$riga) {
+    # best effort: un file di log bloccato (antivirus, sync) non deve
+    # abortire un test lungo
     $testo = "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss.fff'), $riga
-    Add-Content -Path $fileLog -Value $testo -Encoding UTF8
+    Add-Content -Path $fileLog -Value $testo -Encoding UTF8 -ErrorAction SilentlyContinue
 }
 
 Scrivi-Log "Avvio test: $DurataMinuti min, CPU $CaricoCPU%, RAM $MemoriaMB MB, $nCore core ($nomeCpu)"
@@ -131,6 +135,7 @@ $errore = $null
 try {
     Write-Host "Occupazione di $MemoriaMB MB di RAM..." -ForegroundColor Gray
     $daAllocare = $MemoriaMB
+    $mbAllocati = 0
     while ($daAllocare -gt 0) {
         $dim = [math]::Min($CHUNK_MB, $daAllocare)
         try {
@@ -138,16 +143,17 @@ try {
             # tocca le pagine per forzare l'impegno fisico della memoria
             for ($i = 0; $i -lt $blocco.Length; $i += 4096) { $blocco[$i] = 171 }
             $blocchiRam.Add($blocco)
+            $mbAllocati += $dim
         } catch {
-            Write-Warning "Limite di memoria raggiunto a $($blocchiRam.Count * $CHUNK_MB) MB."
-            Scrivi-Log "RAM: limite raggiunto a $($blocchiRam.Count * $CHUNK_MB) MB"
+            Write-Warning "Limite di memoria raggiunto a $mbAllocati MB."
+            Scrivi-Log "RAM: limite raggiunto a $mbAllocati MB"
             break
         }
         $daAllocare -= $dim
-        Write-Progress -Activity 'PCStress' -Status "RAM occupata: $(($MemoriaMB - $daAllocare)) / $MemoriaMB MB" -PercentComplete ((($MemoriaMB - $daAllocare) / $MemoriaMB) * 100)
+        Write-Progress -Activity 'PCStress' -Status "RAM occupata: $mbAllocati / $MemoriaMB MB" -PercentComplete (($mbAllocati / $MemoriaMB) * 100)
     }
     Write-Progress -Activity 'PCStress' -Completed
-    $ramOccupata = $blocchiRam.Count * $CHUNK_MB
+    $ramOccupata = $mbAllocati
     Scrivi-Log "RAM occupata: $ramOccupata MB"
 
     # ------------------------------------------------------- ciclo di controllo
@@ -213,8 +219,11 @@ try {
             $testoCarico = if ($null -ne $caricoAttuale) { "$([math]::Round($caricoAttuale))%" } else { 'n/d' }
             $trascorso = ((Get-Date) - $avvio).TotalSeconds
             $percento = [math]::Max(0, [math]::Min(100, ($trascorso / ($DurataMinuti * 60)) * 100))
+            # minuti totali, non "minuti nell'ora": un test da 90 min deve mostrare 90:00
+            $minRimasti = [int][math]::Floor($rimasto / 60)
+            $secRimasti = [int]($rimasto % 60)
             Write-Progress -Activity 'PCStress - test in corso' `
-                -Status ("CPU: {0}  |  RAM occupata: {1} MB  |  blocchi rilevati: {2}  |  restano {3:mm\:ss}" -f $testoCarico, $ramOccupata, $blocchiRilevati, [timespan]::FromSeconds($rimasto)) `
+                -Status ("CPU: {0}  |  RAM occupata: {1} MB  |  blocchi rilevati: {2}  |  restano {3}:{4:d2}" -f $testoCarico, $ramOccupata, $blocchiRilevati, $minRimasti, $secRimasti) `
                 -PercentComplete $percento
             Scrivi-Log "vivo - CPU: $testoCarico, blocchi: $blocchiRilevati"
         }
@@ -238,7 +247,7 @@ try {
 
 if ($errore) {
     Scrivi-Log "Errore imprevisto: $errore"
-    Write-Error "Errore imprevisto durante il test: $errore"
+    Write-Host "ERRORE imprevisto durante il test: $errore" -ForegroundColor Red
     exit 1
 }
 
@@ -259,12 +268,12 @@ Write-Host ''
 
 if ($blocchiRilevati -gt 0) {
     $verdetto = "INSTABILE: il sistema si e' bloccato $blocchiRilevati volta/e sotto carico."
-    Write-Host "  ✗ $verdetto" -ForegroundColor Red
+    Write-Host "  [X] $verdetto" -ForegroundColor Red
     Write-Host '    Cause tipiche: surriscaldamento, RAM difettosa, alimentazione insufficiente,' -ForegroundColor Red
     Write-Host '    driver instabili. Controlla temperature e memoria (mdsched.exe).' -ForegroundColor Red
 } else {
     $verdetto = 'STABILE: nessun blocco rilevato per tutta la durata del test.'
-    Write-Host "  ✓ $verdetto" -ForegroundColor Green
+    Write-Host "  [OK] $verdetto" -ForegroundColor Green
     Write-Host '    Nota: se durante il test il PC si e'' riavviato o spento da solo,' -ForegroundColor Gray
     Write-Host '    il risultato e'' comunque INSTABILE (controlla il log per l''ora esatta).' -ForegroundColor Gray
 }
