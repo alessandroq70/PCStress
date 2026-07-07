@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PCStress — Test di stabilità del PC</title>
+<style>
+  :root {
+    --pagina:        #0d0d0d;
+    --superficie:    #1a1a19;
+    --testo:         #ffffff;
+    --testo-2:       #c3c2b7;
+    --testo-muto:    #898781;
+    --griglia:       #2c2c2a;
+    --asse:          #383835;
+    --bordo:         rgba(255,255,255,0.10);
+    --serie-cpu:     #3987e5;
+    --serie-gpu:     #199e70;
+    --serie-lag:     #c98500;
+    --serie-ram:     #9085e9;
+    --stato-ok:      #0ca30c;
+    --stato-avviso:  #fab219;
+    --stato-serio:   #ec835a;
+    --stato-critico: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--pagina);
+    color: var(--testo);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.45;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 16px 16px 48px; }
+  header { padding: 28px 16px 6px; max-width: 980px; margin: 0 auto; }
+  header h1 { margin: 0; font-size: 26px; letter-spacing: 0.3px; }
+  header h1 span { color: var(--serie-cpu); }
+  header p { margin: 4px 0 0; color: var(--testo-2); font-size: 14px; }
+
+  .card {
+    background: var(--superficie);
+    border: 1px solid var(--bordo);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-top: 16px;
+  }
+  .card h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; color: var(--testo-2);
+             text-transform: uppercase; letter-spacing: 0.8px; }
+
+  /* ------ configurazione ------ */
+  .config-griglia { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+  .campo label { display: block; font-size: 13px; color: var(--testo-muto); margin-bottom: 5px; }
+  .campo select {
+    width: 100%; padding: 8px 10px; border-radius: 7px;
+    background: var(--pagina); color: var(--testo);
+    border: 1px solid var(--asse); font-size: 14px;
+  }
+  .moduli { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 14px; }
+  .moduli label { display: flex; align-items: center; gap: 7px; font-size: 14px; color: var(--testo-2); cursor: pointer; }
+  .moduli input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--serie-cpu); }
+  .moduli .disab { opacity: 0.45; cursor: not-allowed; }
+
+  .azioni { margin-top: 18px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  button {
+    font: inherit; border: none; border-radius: 8px; cursor: pointer;
+    padding: 11px 26px; font-size: 15px; font-weight: 600;
+  }
+  #btn-avvia { background: var(--serie-cpu); color: #fff; }
+  #btn-avvia:hover { filter: brightness(1.12); }
+  #btn-ferma { background: var(--stato-critico); color: #fff; padding: 8px 18px; }
+  #btn-nuovo { background: var(--serie-cpu); color: #fff; display: none; }
+  .nota { font-size: 12.5px; color: var(--testo-muto); }
+
+  /* ------ banner crash precedente ------ */
+  #banner-crash {
+    display: none; margin-top: 16px; padding: 14px 18px; border-radius: 10px;
+    border: 1px solid var(--stato-critico); background: rgba(208,59,59,0.12);
+    font-size: 14px;
+  }
+  #banner-crash strong { color: var(--stato-critico); }
+
+  /* ------ stato test ------ */
+  #fascia-stato {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  #conto { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #fase { color: var(--testo-2); font-size: 14px; }
+  .lampeggio { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+               background: var(--stato-ok); margin-right: 7px; animation: pulsa 1.2s infinite; }
+  @keyframes pulsa { 50% { opacity: 0.25; } }
+
+  .tessere { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 16px; }
+  .tessera {
+    background: var(--pagina); border: 1px solid var(--bordo); border-radius: 8px; padding: 10px 12px;
+  }
+  .tessera .etich { font-size: 11.5px; color: var(--testo-muto); text-transform: uppercase; letter-spacing: 0.6px; }
+  .tessera .valore { font-size: 21px; font-weight: 700; margin-top: 2px; }
+  .tessera .valore small { font-size: 12px; font-weight: 400; color: var(--testo-muto); }
+  .tessera[data-allarme="1"] .valore { color: var(--stato-serio); }
+  .tessera[data-allarme="2"] .valore { color: var(--stato-critico); }
+
+  .grafici { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; margin-top: 12px; }
+  .grafico { background: var(--pagina); border: 1px solid var(--bordo); border-radius: 8px; padding: 10px 12px 6px; position: relative; }
+  .grafico .titolo { font-size: 12px; color: var(--testo-muto); display: flex; justify-content: space-between; }
+  .grafico .titolo b { color: var(--testo-2); font-weight: 600; }
+  .grafico canvas { width: 100%; height: 64px; display: block; margin-top: 4px; cursor: crosshair; }
+  .suggerimento {
+    position: absolute; pointer-events: none; display: none;
+    background: var(--superficie); border: 1px solid var(--bordo); border-radius: 6px;
+    padding: 3px 8px; font-size: 12px; color: var(--testo); white-space: nowrap; z-index: 5;
+    transform: translate(-50%, -130%);
+  }
+
+  #canvas-gpu { width: 100%; max-height: 190px; border-radius: 8px; border: 1px solid var(--bordo);
+                margin-top: 12px; display: none; object-fit: cover; }
+
+  #registro {
+    margin-top: 14px; max-height: 190px; overflow-y: auto;
+    background: var(--pagina); border: 1px solid var(--bordo); border-radius: 8px;
+    padding: 8px 12px; font: 12px/1.7 ui-monospace, Consolas, monospace; color: var(--testo-2);
+  }
+  #registro .critico { color: var(--stato-critico); font-weight: 600; }
+  #registro .avviso  { color: var(--stato-avviso); }
+  #registro .ok      { color: var(--stato-ok); }
+  #registro time     { color: var(--testo-muto); margin-right: 8px; }
+
+  /* ------ risultato ------ */
+  #card-risultato { display: none; }
+  #verdetto { display: flex; align-items: center; gap: 14px; }
+  #verdetto .icona { font-size: 40px; }
+  #verdetto h3 { margin: 0; font-size: 24px; }
+  #verdetto p { margin: 3px 0 0; color: var(--testo-2); font-size: 14px; }
+  #verdetto.v-ok h3      { color: var(--stato-ok); }
+  #verdetto.v-avviso h3  { color: var(--stato-avviso); }
+  #verdetto.v-critico h3 { color: var(--stato-critico); }
+  #motivi { margin: 14px 0 0; padding-left: 20px; color: var(--testo-2); font-size: 14px; }
+  #motivi li { margin: 3px 0; }
+  #riassunto { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13.5px; }
+  #riassunto td { padding: 5px 8px; border-bottom: 1px solid var(--griglia); }
+  #riassunto td:first-child { color: var(--testo-muto); width: 55%; }
+  #riassunto td:last-child { font-variant-numeric: tabular-nums; }
+
+  /* ------ sistema ------ */
+  #tab-sistema { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  #tab-sistema td { padding: 5px 8px; border-bottom: 1px solid var(--griglia); vertical-align: top; }
+  #tab-sistema td:first-child { color: var(--testo-muto); white-space: nowrap; width: 30%; }
+
+  footer { max-width: 980px; margin: 26px auto 0; padding: 0 16px 40px; color: var(--testo-muto); font-size: 12.5px; }
+  footer a { color: var(--serie-cpu); }
+  footer code { background: var(--superficie); border: 1px solid var(--bordo); padding: 1px 6px; border-radius: 4px; }
+  a.scarica { color: var(--serie-cpu); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>PC<span>Stress</span></h1>
+  <p>Test di stabilità: porta al limite CPU, RAM, GPU e disco di <em>questo</em> computer e rileva blocchi, rallentamenti anomali ed errori.</p>
+</header>
+<main>
+
+  <div id="banner-crash">
+    <strong>⚠ Il test precedente si è interrotto in modo anomalo.</strong>
+    <span id="banner-crash-dett"></span><br>
+    Se non hai chiuso tu la pagina, il sistema (o il browser) si è probabilmente bloccato o riavviato sotto carico:
+    è un forte indizio di instabilità.
+  </div>
+
+  <section class="card" id="card-config">
+    <h2>Configurazione del test</h2>
+    <div class="config-griglia">
+      <div class="campo">
+        <label for="sel-durata">Durata</label>
+        <select id="sel-durata">
+          <option value="60">1 minuto (rapido)</option>
+          <option value="300">5 minuti</option>
+          <option value="600" selected>10 minuti</option>
+          <option value="900">15 minuti</option>
+          <option value="1800">30 minuti</option>
+          <option value="3600">1 ora (approfondito)</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="sel-carico">Intensità del carico</label>
+        <select id="sel-carico">
+          <option value="0.5">Media (50%)</option>
+          <option value="0.75">Alta (75%)</option>
+          <option value="1" selected>Massima (100%)</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="sel-ram">RAM da occupare</label>
+        <select id="sel-ram">
+          <option value="512">512 MB</option>
+          <option value="1024" selected>1 GB</option>
+          <option value="2048">2 GB</option>
+          <option value="3072">3 GB</option>
+        </select>
+      </div>
+    </div>
+    <div class="moduli">
+      <label><input type="checkbox" id="chk-cpu" checked> CPU (tutti i core: <span id="n-core">?</span>)</label>
+      <label><input type="checkbox" id="chk-ram" checked> RAM</label>
+      <label><input type="checkbox" id="chk-gpu" checked> GPU (rendering 3D)</label>
+      <label id="lbl-disco"><input type="checkbox" id="chk-disco"> Disco (scrittura continua)</label>
+    </div>
+    <div class="azioni">
+      <button id="btn-avvia">▶ Avvia il test</button>
+      <span class="nota">Salva i documenti aperti prima di iniziare. Tieni questa scheda in primo piano per tutta la durata.</span>
+    </div>
+  </section>
+
+  <section class="card" id="card-stato" style="display:none">
+    <div id="fascia-stato">
+      <div><span class="lampeggio"></span><span id="fase">Test in corso…</span></div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div id="conto">--:--</div>
+        <button id="btn-ferma">■ Ferma</button>
+      </div>
+    </div>
+
+    <div class="tessere">
+      <div class="tessera"><div class="etich">CPU — operazioni/s</div><div class="valore" id="t-cpu">—</div></div>
+      <div class="tessera"><div class="etich">GPU — fotogrammi/s</div><div class="valore" id="t-fps">—</div></div>
+      <div class="tessera"><div class="etich">RAM occupata</div><div class="valore" id="t-ram">—</div></div>
+      <div class="tessera"><div class="etich">Disco — scrittura</div><div class="valore" id="t-disco">—</div></div>
+      <div class="tessera" id="tess-lag"><div class="etich">Lag max interfaccia</div><div class="valore" id="t-lag">—</div></div>
+      <div class="tessera" id="tess-prob"><div class="etich">Problemi rilevati</div><div class="valore" id="t-prob">0</div></div>
+    </div>
+
+    <div class="grafici">
+      <div class="grafico"><div class="titolo"><b>CPU</b><span id="g-cpu-val">op/s</span></div><canvas id="g-cpu"></canvas><div class="suggerimento"></div></div>
+      <div class="grafico"><div class="titolo"><b>GPU</b><span id="g-fps-val">fps</span></div><canvas id="g-fps"></canvas><div class="suggerimento"></div></div>
+      <div class="grafico"><div class="titolo"><b>Reattività</b><span id="g-lag-val">ms di lag</span></div><canvas id="g-lag"></canvas><div class="suggerimento"></div></div>
+      <div class="grafico"><div class="titolo"><b>RAM</b><span id="g-ram-val">MB</span></div><canvas id="g-ram"></canvas><div class="suggerimento"></div></div>
+    </div>
+
+    <canvas id="canvas-gpu"></canvas>
+
+    <div id="registro" aria-live="polite"></div>
+  </section>
+
+  <section class="card" id="card-risultato">
+    <div id="verdetto">
+      <div class="icona"></div>
+      <div><h3></h3><p></p></div>
+    </div>
+    <ul id="motivi"></ul>
+    <table id="riassunto"></table>
+    <div class="azioni">
+      <button id="btn-report" style="background:var(--asse);color:var(--testo)">⬇ Scarica report</button>
+      <button id="btn-nuovo">↻ Nuovo test</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Questo computer</h2>
+    <table id="tab-sistema"></table>
+  </section>
+
+  <footer>
+    Il test gira interamente nel browser di questo computer: nulla viene inviato in rete.
+    Un browser non può però saturare la macchina quanto un programma nativo: per lo stress più profondo
+    (consigliato per diagnosi serie) <a class="scarica" href="stress-nativo.ps1" download>scarica lo script nativo per Windows</a>
+    ed eseguilo con: <code>powershell -ExecutionPolicy Bypass -File .\stress-nativo.ps1</code>.
+    Se la pagina, il browser o l'intero PC si bloccano o si riavviano durante il test,
+    il computer <strong>non</strong> è stabile sotto carico.
+  </footer>
+</main>
+
+<script>
+'use strict';
+
+/* ============================================================
+   PCStress — test di stabilità nel browser
+   Moduli: CPU (web worker per core), RAM (worker dedicato),
+   GPU (WebGL), Disco (OPFS). Sonda di reattività sul thread
+   principale + sentinella anti-crash in localStorage.
+   ============================================================ */
+
+const $ = (id) => document.getElementById(id);
+
+/* ---------------- registro eventi ---------------- */
+function log(msg, classe) {
+  const r = $('registro');
+  const riga = document.createElement('div');
+  if (classe) riga.className = classe;
+  const t = document.createElement('time');
+  t.textContent = new Date().toLocaleTimeString('it-IT');
+  riga.appendChild(t);
+  riga.appendChild(document.createTextNode(msg));
+  r.appendChild(riga);
+  r.scrollTop = r.scrollHeight;
+  Test.eventi.push({ ora: new Date().toISOString(), livello: classe || 'info', msg });
+}
+
+/* ---------------- sorgenti dei worker (blob) ---------------- */
+const SRC_CPU = String.raw`
+'use strict';
+let attivo = false, duty = 1, iterazioni = 0, timerBattito = null;
+const buf = new Float64Array(1024);
+function ciclo() {
+  if (!attivo) return;
+  const FETTA = 60;                       // ms di lavoro continuo per ciclo
+  const fine = performance.now() + FETTA;
+  let x = 0.5, n = 1 | 0;
+  while (performance.now() < fine) {
+    for (let i = 0; i < 2000; i++) {
+      x = Math.sin(x) * 1.1 + Math.sqrt(Math.abs(Math.cos(x * 3.7)) + 1e-9);
+      n = (Math.imul(n, 1103515245) + 12345) & 0x7fffffff;
+      buf[i & 1023] = x + n;
+    }
+    iterazioni += 2000;
+  }
+  const riposo = duty >= 0.999 ? 0 : Math.max(1, Math.round(FETTA * (1 - duty) / duty));
+  setTimeout(ciclo, riposo);
+}
+onmessage = (e) => {
+  const m = e.data;
+  if (m.cmd === 'avvia') {
+    duty = m.duty; attivo = true; iterazioni = 0;
+    ciclo();
+    timerBattito = setInterval(() => { postMessage({ tipo: 'battito', iterazioni }); iterazioni = 0; }, 500);
+  } else if (m.cmd === 'ferma') {
+    attivo = false;
+    if (timerBattito) clearInterval(timerBattito);
+    close();
+  }
+};
+`;
+
+const SRC_RAM = String.raw`
+'use strict';
+let blocchi = [], targetMB = 0, timerTocco = null, fermo = false;
+const CHUNK_MB = 64;
+function alloca() {
+  if (fermo || targetMB <= 0) return;
+  if (blocchi.length * CHUNK_MB >= targetMB) {
+    postMessage({ tipo: 'ram', mb: blocchi.length * CHUNK_MB, completo: true });
+    return;
+  }
+  try {
+    const b = new Uint8Array(CHUNK_MB * 1048576);
+    for (let i = 0; i < b.length; i += 2048) b[i] = 0xAB;   // tocca ogni pagina
+    blocchi.push(b);
+    postMessage({ tipo: 'ram', mb: blocchi.length * CHUNK_MB, completo: false });
+    setTimeout(alloca, 25);
+  } catch (err) {
+    postMessage({ tipo: 'ram-limite', mb: blocchi.length * CHUNK_MB, errore: String(err) });
+  }
+}
+onmessage = (e) => {
+  const m = e.data;
+  if (m.cmd === 'avvia') {
+    targetMB = m.mb;
+    alloca();
+    timerTocco = setInterval(() => {
+      for (let k = 0; k < blocchi.length; k++) {
+        const b = blocchi[k];
+        for (let j = 0; j < 50000; j++) {
+          const p = (Math.imul(j, 40503) + Math.imul(k, 7919)) % b.length;
+          b[p] = (b[p] + 1) & 0xff;
+        }
+      }
+    }, 3000);
+  } else if (m.cmd === 'ferma') {
+    fermo = true;
+    if (timerTocco) clearInterval(timerTocco);
+    blocchi = [];
+    close();
+  }
+};
+`;
+
+const SRC_DISCO = String.raw`
+'use strict';
+let attivo = false;
+async function avvia(nomeFile) {
+  attivo = true;
+  let root, handle;
+  try {
+    root = await navigator.storage.getDirectory();
+    const file = await root.getFileHandle(nomeFile, { create: true });
+    handle = await file.createSyncAccessHandle();
+  } catch (err) {
+    postMessage({ tipo: 'disco-nd', errore: String(err) });
+    return;
+  }
+  const BLOCCO = 4 * 1048576;      // scritture da 4 MB
+  const AREA = 256 * 1048576;      // su un file circolare da 256 MB
+  const dati = new Uint8Array(BLOCCO);
+  for (let i = 0; i < dati.length; i += 512) dati[i] = i & 0xff;
+  let offset = 0, scritti = 0, t0 = performance.now();
+  try {
+    while (attivo) {
+      handle.write(dati, { at: offset });
+      offset = (offset + BLOCCO) % AREA;
+      scritti += BLOCCO;
+      if (offset === 0) handle.flush();
+      const ora = performance.now();
+      if (ora - t0 >= 1000) {
+        postMessage({ tipo: 'disco', mbs: scritti / 1048576 / ((ora - t0) / 1000) });
+        scritti = 0; t0 = ora;
+        await new Promise(r => setTimeout(r, 0));   // fa arrivare eventuali messaggi
+      }
+    }
+  } catch (err) {
+    postMessage({ tipo: 'disco-errore', errore: String(err) });
+  } finally {
+    try { handle.flush(); handle.close(); await root.removeEntry(nomeFile); } catch (e) {}
+    close();
+  }
+}
+onmessage = (e) => {
+  if (e.data.cmd === 'avvia') avvia(e.data.file);
+  else if (e.data.cmd === 'ferma') attivo = false;
+};
+`;
+
+function creaWorker(src) {
+  const blob = new Blob([src], { type: 'text/javascript' });
+  const url = URL.createObjectURL(blob);
+  const w = new Worker(url);
+  URL.revokeObjectURL(url);
+  return w;
+}
+
+/* ---------------- sparkline ---------------- */
+class Sparkline {
+  constructor(canvas, colore, formatta) {
+    this.cv = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.colore = colore;
+    this.formatta = formatta || ((v) => String(Math.round(v)));
+    this.dati = [];          // { t: secondi dall'avvio, v: valore }
+    this.MAX = 150;
+    this.sugg = canvas.parentElement.querySelector('.suggerimento');
+    canvas.addEventListener('mousemove', (e) => this.hover(e));
+    canvas.addEventListener('mouseleave', () => { this.sugg.style.display = 'none'; this.disegna(); });
+  }
+  aggiungi(t, v) {
+    this.dati.push({ t, v });
+    if (this.dati.length > this.MAX) this.dati.shift();
+    this.disegna();
+  }
+  dimensiona() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = this.cv.clientWidth, h = this.cv.clientHeight;
+    if (!w || !h) return false;
+    if (this.cv.width !== Math.round(w * dpr) || this.cv.height !== Math.round(h * dpr)) {
+      this.cv.width = Math.round(w * dpr);
+      this.cv.height = Math.round(h * dpr);
+    }
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return true;
+  }
+  disegna(evidenzia) {
+    if (!this.dimensiona()) return;
+    const ctx = this.ctx, w = this.cv.clientWidth, h = this.cv.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    const n = this.dati.length;
+    // linea di base
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--asse').trim() || '#383835';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, h - 0.5); ctx.lineTo(w, h - 0.5); ctx.stroke();
+    if (n < 2) return;
+    const max = Math.max(1e-9, ...this.dati.map(d => d.v));
+    const px = (i) => n === 1 ? w : (i / (n - 1)) * (w - 4) + 2;
+    const py = (v) => h - 3 - (v / max) * (h - 10);
+    // area
+    ctx.beginPath();
+    ctx.moveTo(px(0), h - 1);
+    for (let i = 0; i < n; i++) ctx.lineTo(px(i), py(this.dati[i].v));
+    ctx.lineTo(px(n - 1), h - 1);
+    ctx.closePath();
+    ctx.globalAlpha = 0.15; ctx.fillStyle = this.colore; ctx.fill(); ctx.globalAlpha = 1;
+    // linea
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) i ? ctx.lineTo(px(i), py(this.dati[i].v)) : ctx.moveTo(px(i), py(this.dati[i].v));
+    ctx.strokeStyle = this.colore; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+    // ultimo punto
+    const u = this.dati[n - 1];
+    ctx.beginPath(); ctx.arc(px(n - 1), py(u.v), 3, 0, Math.PI * 2);
+    ctx.fillStyle = this.colore; ctx.fill();
+    // crosshair hover
+    if (evidenzia != null && evidenzia >= 0 && evidenzia < n) {
+      const x = px(evidenzia), y = py(this.dati[evidenzia].v);
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = this.colore; ctx.fill();
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--pagina').trim() || '#0d0d0d';
+      ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+  hover(e) {
+    const n = this.dati.length;
+    if (n < 2) return;
+    const r = this.cv.getBoundingClientRect();
+    const i = Math.max(0, Math.min(n - 1, Math.round((e.clientX - r.left - 2) / (r.width - 4) * (n - 1))));
+    const d = this.dati[i];
+    this.sugg.textContent = this.formatta(d.v) + ' · ' + formattaTempo(d.t);
+    this.sugg.style.display = 'block';
+    this.sugg.style.left = (e.clientX - r.left + this.cv.offsetLeft) + 'px';
+    this.sugg.style.top = this.cv.offsetTop + 'px';
+    this.disegna(i);
+  }
+}
+
+function formattaTempo(s) {
+  const m = Math.floor(s / 60), r = Math.floor(s % 60);
+  return (m ? m + 'm ' : '') + r + 's';
+}
+function formattaNumero(v) {
+  if (v >= 1e9) return (v / 1e9).toFixed(1) + ' Mld';
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + ' M';
+  if (v >= 1e3) return (v / 1e3).toFixed(0) + ' k';
+  return String(Math.round(v));
+}
+
+/* ---------------- modulo GPU (WebGL) ---------------- */
+const Gpu = {
+  attivo: false, gl: null, canvas: null, raf: 0, frame: 0, contestiPersi: 0, tAvvio: 0,
+  listenerPronto: false,
+  avvia(intensita) {
+    this.canvas = $('canvas-gpu');
+    this.canvas.style.display = 'block';
+    const dim = intensita >= 1 ? [1920, 1080] : intensita >= 0.75 ? [1280, 720] : [960, 540];
+    this.canvas.width = dim[0]; this.canvas.height = dim[1];
+    const gl = this.canvas.getContext('webgl', { powerPreference: 'high-performance' })
+            || this.canvas.getContext('experimental-webgl');
+    if (!gl) { log('GPU: WebGL non disponibile su questo browser — modulo saltato', 'avviso'); this.canvas.style.display = 'none'; return false; }
+    if (gl.isContextLost && gl.isContextLost()) {
+      log('GPU: il contesto grafico risulta perso (crash precedente del driver) — ricarica la pagina per ritestare la GPU', 'avviso');
+      this.canvas.style.display = 'none';
+      return false;
+    }
+    this.gl = gl;
+    if (!this.listenerPronto) {
+      this.listenerPronto = true;
+      this.canvas.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+        this.contestiPersi++;
+        this.attivo = false;
+        if (this.raf) cancelAnimationFrame(this.raf);
+        log('GPU: CONTESTO GRAFICO PERSO — il driver video si è ripristinato o è andato in crash', 'critico');
+      });
+    }
+    const vsrc = 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }';
+    const iter = intensita >= 1 ? 700 : intensita >= 0.75 ? 400 : 200;
+    const fsrc =
+      'precision highp float;\n' +
+      'uniform vec2 uRes; uniform float uT;\n' +
+      'void main(){\n' +
+      '  vec2 c = (gl_FragCoord.xy/uRes - 0.5)*vec2(3.2, 3.2*uRes.y/uRes.x)\n' +
+      '           + vec2(-0.55 + 0.12*sin(uT*0.31), 0.1*cos(uT*0.23));\n' +
+      '  vec2 z = vec2(0.0); float m = 0.0;\n' +
+      '  for (int i = 0; i < ' + iter + '; i++) {\n' +
+      '    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;\n' +
+      '    if (dot(z,z) > 4.0) { m = float(i)/' + iter + '.0; break; }\n' +
+      '  }\n' +
+      '  gl_FragColor = vec4(0.5 + 0.5*cos(3.0 + m*18.0 + vec3(0.0, 0.6, 1.0)), 1.0);\n' +
+      '}';
+    const compila = (tipo, src) => {
+      const s = gl.createShader(tipo);
+      gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+      return s;
+    };
+    let prog;
+    try {
+      prog = gl.createProgram();
+      gl.attachShader(prog, compila(gl.VERTEX_SHADER, vsrc));
+      gl.attachShader(prog, compila(gl.FRAGMENT_SHADER, fsrc));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    } catch (err) {
+      log('GPU: errore di compilazione shader — modulo saltato (' + err.message + ')', 'avviso');
+      this.canvas.style.display = 'none';
+      return false;
+    }
+    gl.useProgram(prog);
+    const vb = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const uRes = gl.getUniformLocation(prog, 'uRes');
+    const uT = gl.getUniformLocation(prog, 'uT');
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.uniform2f(uRes, this.canvas.width, this.canvas.height);
+    this.attivo = true;
+    this.frame = 0;
+    this.tAvvio = performance.now();
+    const loop = () => {
+      if (!this.attivo) return;
+      gl.uniform1f(uT, (performance.now() - this.tAvvio) / 1000);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.flush();
+      this.frame++;
+      this.raf = requestAnimationFrame(loop);
+    };
+    this.raf = requestAnimationFrame(loop);
+    return true;
+  },
+  ferma() {
+    this.attivo = false;
+    if (this.raf) cancelAnimationFrame(this.raf);
+    if (this.canvas) this.canvas.style.display = 'none';
+  }
+};
+
+/* ---------------- sonda di reattività ---------------- */
+function rinfrescaBattiti() {
+  // dopo un congelamento del thread principale i messaggi dei worker erano
+  // solo in coda, non persi: azzera i timestamp per non dichiararli morti
+  // (i worker già dichiarati morti, marcati Infinity, restano tali)
+  const ora = performance.now();
+  Test.battiti = Test.battiti.map(b => b === Infinity ? Infinity : ora);
+}
+
+const Sonda = {
+  maxLag: 0, lagSecondo: 0, rallentamenti: 0, blocchi: 0, maxBlocco: 0,
+  saltaProssimo: false,
+  azzera() { this.maxLag = 0; this.lagSecondo = 0; this.rallentamenti = 0; this.blocchi = 0; this.maxBlocco = 0; this.saltaProssimo = false; },
+  avvia() {
+    const PASSO = 200;
+    let atteso = performance.now() + PASSO;
+    const tick = () => {
+      if (!Test.inCorso) return;
+      const ora = performance.now();
+      const lag = ora - atteso;
+      atteso = ora + PASSO;
+      // durante l'allocazione iniziale della RAM qualche scatto è fisiologico
+      const allocazioneRam = Test.config && Test.config.ram && !Test.ramCompleta && !Test.ramLimite;
+      if (this.saltaProssimo || document.visibilityState !== 'visible') {
+        // scheda nascosta, o primo tick dopo un cambio di visibilità: il
+        // ritardo viene dal throttling del browser, non dal PC
+        this.saltaProssimo = false;
+      } else if (lag > 15000) {
+        // pausa enorme: quasi sempre sospensione del sistema (coperchio
+        // chiuso) o scheda congelata dal browser, non un blocco reale
+        log('Pausa di ' + Math.round(lag / 1000) + ' s rilevata (sospensione del PC o scheda congelata dal browser): campione ignorato', 'avviso');
+        rinfrescaBattiti();
+      } else if (lag > 0) {
+        if (lag > this.maxLag) this.maxLag = lag;
+        if (lag > this.lagSecondo) this.lagSecondo = lag;
+        if (lag > 5000 && !allocazioneRam) {
+          this.blocchi++;
+          if (lag > this.maxBlocco) this.maxBlocco = lag;
+          log('BLOCCO: interfaccia congelata per ' + (lag / 1000).toFixed(1) + ' s', 'critico');
+          rinfrescaBattiti();
+        } else if (lag > 1000 && !allocazioneRam) {
+          this.rallentamenti++;
+          log('Rallentamento grave: interfaccia ferma per ' + Math.round(lag) + ' ms', 'avviso');
+        }
+      }
+      setTimeout(tick, PASSO);
+    };
+    setTimeout(tick, PASSO);
+  }
+};
+
+/* ---------------- stato del test ---------------- */
+const Test = {
+  inCorso: false,
+  config: null,
+  tAvvio: 0,
+  workers: [],           // worker CPU
+  battiti: [],           // ultimo battito visto per worker CPU
+  cpuAccum: 0,
+  workerMorti: 0,
+  ramWorker: null, ramMB: 0, ramCompleta: false, ramLimite: false,
+  discoWorker: null, discoMBs: null, discoErrori: 0,
+  erroriPagina: 0,
+  eventi: [],
+  timerCampione: null, timerSentinella: null,
+  wakeLock: null,
+  esitoManuale: false,
+  campioni: { cpu: [], fps: [], lag: [], ram: [] },
+};
+
+const SENTINELLA = 'pcstress-sentinella';
+
+let grafCpu, grafFps, grafLag, grafRam;
+
+/* ---------------- info sistema ---------------- */
+function infoSistema() {
+  const core = navigator.hardwareConcurrency || 4;
+  let gpuNome = 'sconosciuta';
+  try {
+    const cv = document.createElement('canvas');
+    const gl = cv.getContext('webgl');
+    if (gl) {
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      gpuNome = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : (gl.getParameter(gl.RENDERER) || 'sconosciuta');
+      const lose = gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+    }
+  } catch (e) {}
+  const info = {
+    'Core logici CPU': core,
+    'Memoria (indicativa)': navigator.deviceMemory ? '≥ ' + navigator.deviceMemory + ' GB' : 'non rilevabile',
+    'Scheda video': gpuNome,
+    'Schermo': screen.width + '×' + screen.height + ' (' + (window.devicePixelRatio || 1) + '×)',
+    'Browser': navigator.userAgent,
+  };
+  const tab = $('tab-sistema');
+  tab.innerHTML = '';
+  for (const [k, v] of Object.entries(info)) {
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td'); td1.textContent = k;
+    const td2 = document.createElement('td'); td2.textContent = v;
+    tr.append(td1, td2); tab.appendChild(tr);
+  }
+  $('n-core').textContent = core;
+  return info;
+}
+
+/* ---------------- avvio ---------------- */
+async function avviaTest() {
+  const url = new URL(location.href);
+  const durataForzata = parseInt(url.searchParams.get('secondi'), 10);
+  const cfg = {
+    durata: Number.isFinite(durataForzata) && durataForzata > 0 ? durataForzata : parseInt($('sel-durata').value, 10),
+    carico: parseFloat($('sel-carico').value),
+    ramMB: parseInt($('sel-ram').value, 10),
+    cpu: $('chk-cpu').checked,
+    ram: $('chk-ram').checked,
+    gpu: $('chk-gpu').checked,
+    disco: $('chk-disco').checked,
+  };
+  if (!cfg.cpu && !cfg.ram && !cfg.gpu && !cfg.disco) { alert('Seleziona almeno un modulo di test.'); return; }
+
+  Test.inCorso = true;
+  Test.config = cfg;
+  Test.tAvvio = performance.now();
+  Test.cpuAccum = 0; Test.workerMorti = 0;
+  Test.ramMB = 0; Test.ramCompleta = false; Test.ramLimite = false;
+  Test.discoMBs = null; Test.discoErrori = 0;
+  Test.erroriPagina = 0;
+  Test.eventi = [];
+  Test.esitoManuale = false;
+  Test.campioni = { cpu: [], fps: [], lag: [], ram: [] };
+  Gpu.contestiPersi = 0;
+  Sonda.azzera();
+
+  $('registro').innerHTML = '';
+  $('card-config').style.display = 'none';
+  $('card-risultato').style.display = 'none';
+  $('card-stato').style.display = 'block';
+  $('btn-ferma').style.display = 'inline-block';
+  $('banner-crash').style.display = 'none';
+
+  if (!grafCpu) {
+    const stile = getComputedStyle(document.documentElement);
+    grafCpu = new Sparkline($('g-cpu'), stile.getPropertyValue('--serie-cpu').trim(), (v) => formattaNumero(v) + ' op/s');
+    grafFps = new Sparkline($('g-fps'), stile.getPropertyValue('--serie-gpu').trim(), (v) => Math.round(v) + ' fps');
+    grafLag = new Sparkline($('g-lag'), stile.getPropertyValue('--serie-lag').trim(), (v) => Math.round(v) + ' ms');
+    grafRam = new Sparkline($('g-ram'), stile.getPropertyValue('--serie-ram').trim(), (v) => Math.round(v) + ' MB');
+  } else {
+    [grafCpu, grafFps, grafLag, grafRam].forEach(g => { g.dati = []; g.disegna(); });
+  }
+
+  // sentinella anti-crash: se al prossimo caricamento è ancora presente e
+  // "fredda", il test è morto male (crash della pagina o del sistema)
+  Test.sentinella = { inizio: Date.now(), ultimoSegnale: Date.now(), config: cfg };
+  try { localStorage.setItem(SENTINELLA, JSON.stringify(Test.sentinella)); } catch (e) {}
+  Test.timerSentinella = setInterval(() => {
+    try {
+      // riscrive sempre il record completo tenuto in memoria: una chiave
+      // manipolata da un'altra scheda viene così auto-riparata
+      Test.sentinella.ultimoSegnale = Date.now();
+      localStorage.setItem(SENTINELLA, JSON.stringify(Test.sentinella));
+    } catch (e) {}
+  }, 5000);
+
+  log('Test avviato — durata ' + formattaTempo(cfg.durata) + ', carico ' + Math.round(cfg.carico * 100) + '%', 'ok');
+
+  // blocco dello standby dello schermo (se supportato)
+  try {
+    if (navigator.wakeLock) {
+      Test.wakeLock = await navigator.wakeLock.request('screen');
+      log('Standby dello schermo disattivato per la durata del test');
+    }
+  } catch (e) {}
+
+  // ---- CPU ----
+  if (cfg.cpu) {
+    const nCore = navigator.hardwareConcurrency || 4;
+    Test.workers = []; Test.battiti = [];
+    for (let i = 0; i < nCore; i++) {
+      const w = creaWorker(SRC_CPU);
+      const idx = i;
+      Test.battiti[idx] = performance.now();
+      w.onmessage = (e) => {
+        if (e.data.tipo === 'battito') {
+          Test.cpuAccum += e.data.iterazioni;
+          Test.battiti[idx] = performance.now();
+        }
+      };
+      w.onerror = (e) => {
+        e.preventDefault(); // evita il doppio conteggio come errore di pagina
+        Test.workerMorti++;
+        log('CPU: il worker #' + (idx + 1) + ' è andato in errore (' + (e.message || 'sconosciuto') + ')', 'critico');
+      };
+      w.postMessage({ cmd: 'avvia', duty: cfg.carico });
+      Test.workers.push(w);
+    }
+    log('CPU: ' + nCore + ' worker avviati (uno per core logico)');
+  }
+
+  // ---- RAM ----
+  if (cfg.ram) {
+    Test.ramWorker = creaWorker(SRC_RAM);
+    Test.ramWorker.onmessage = (e) => {
+      const m = e.data;
+      if (m.tipo === 'ram') {
+        Test.ramMB = m.mb;
+        if (m.completo && !Test.ramCompleta) {
+          Test.ramCompleta = true;
+          log('RAM: occupati ' + m.mb + ' MB — mantengo e riscrivo la memoria', 'ok');
+        }
+      } else if (m.tipo === 'ram-limite') {
+        Test.ramMB = m.mb; Test.ramLimite = true;
+        log('RAM: limite del browser raggiunto a ' + m.mb + ' MB (' + m.errore + ') — proseguo con quanto allocato', 'avviso');
+      }
+    };
+    Test.ramWorker.onerror = (e) => {
+      e.preventDefault(); // evita il doppio conteggio come errore di pagina
+      Test.workerMorti++;
+      log('RAM: il worker di memoria è andato in errore (' + (e.message || 'probabile esaurimento memoria') + ')', 'critico');
+    };
+    Test.ramWorker.postMessage({ cmd: 'avvia', mb: cfg.ramMB });
+    log('RAM: allocazione di ' + cfg.ramMB + ' MB in corso…');
+  }
+
+  // ---- GPU ----
+  if (cfg.gpu) {
+    if (Gpu.avvia(cfg.carico)) log('GPU: rendering pesante avviato (' + $('canvas-gpu').width + '×' + $('canvas-gpu').height + ')');
+  }
+
+  // ---- Disco ----
+  if (cfg.disco) {
+    Test.discoWorker = creaWorker(SRC_DISCO);
+    Test.discoWorker.onmessage = (e) => {
+      const m = e.data;
+      if (m.tipo === 'disco') Test.discoMBs = m.mbs;
+      else if (m.tipo === 'disco-nd') { log('Disco: archiviazione privata non disponibile — modulo saltato (' + m.errore + ')', 'avviso'); Test.discoMBs = null; }
+      else if (m.tipo === 'disco-errore') { Test.discoErrori++; log('Disco: ERRORE di scrittura (' + m.errore + ')', 'critico'); }
+    };
+    // nome unico per esecuzione: il worker precedente potrebbe non aver
+    // ancora rilasciato il suo handle esclusivo sul file
+    Test.discoWorker.postMessage({ cmd: 'avvia', file: 'pcstress-disco-' + Date.now() + '.bin' });
+    log('Disco: scrittura continua avviata (file temporaneo da 256 MB)');
+  }
+
+  Sonda.avvia();
+  Test.timerCampione = setInterval(campiona, 1000);
+}
+
+/* ---------------- campionamento (1 s) ---------------- */
+function campiona() {
+  if (!Test.inCorso) return;
+  const t = (performance.now() - Test.tAvvio) / 1000;
+  const cfg = Test.config;
+
+  // CPU
+  if (cfg.cpu) {
+    const ops = Test.cpuAccum; Test.cpuAccum = 0;
+    Test.campioni.cpu.push(ops);
+    grafCpu.aggiungi(t, ops);
+    $('t-cpu').textContent = formattaNumero(ops);
+    $('g-cpu-val').textContent = formattaNumero(ops) + ' op/s';
+    // watchdog: worker silenzioso da troppo tempo?
+    if (document.visibilityState === 'visible') {
+      const ora = performance.now();
+      Test.battiti.forEach((b, i) => {
+        if (ora - b > 8000) {
+          Test.battiti[i] = Infinity; // conta una sola volta, finché non torna a battere
+          Test.workerMorti++;
+          log('CPU: il worker #' + (i + 1) + ' non risponde da più di 8 s', 'critico');
+        }
+      });
+    }
+  } else $('t-cpu').textContent = '—';
+
+  // GPU
+  if (cfg.gpu && Gpu.attivo) {
+    const fps = Gpu.frame; Gpu.frame = 0;
+    if (document.visibilityState === 'visible') {
+      Test.campioni.fps.push(fps);
+      grafFps.aggiungi(t, fps);
+    }
+    $('t-fps').textContent = fps;
+    $('g-fps-val').textContent = fps + ' fps';
+  } else $('t-fps').textContent = '—';
+
+  // RAM
+  if (cfg.ram) {
+    Test.campioni.ram.push(Test.ramMB);
+    grafRam.aggiungi(t, Test.ramMB);
+    $('t-ram').textContent = Test.ramMB >= 1024 ? (Test.ramMB / 1024).toFixed(1) : Test.ramMB;
+    $('t-ram').innerHTML += ' <small>' + (Test.ramMB >= 1024 ? 'GB' : 'MB') + '</small>';
+    $('g-ram-val').textContent = Test.ramMB + ' MB';
+  } else $('t-ram').textContent = '—';
+
+  // Disco
+  if (cfg.disco && Test.discoMBs != null) {
+    $('t-disco').textContent = Math.round(Test.discoMBs);
+    $('t-disco').innerHTML += ' <small>MB/s</small>';
+  } else $('t-disco').textContent = '—';
+
+  // Lag
+  const lag = Sonda.lagSecondo; Sonda.lagSecondo = 0;
+  Test.campioni.lag.push(lag);
+  grafLag.aggiungi(t, lag);
+  $('t-lag').textContent = Math.round(Sonda.maxLag);
+  $('t-lag').innerHTML += ' <small>ms</small>';
+  $('tess-lag').dataset.allarme = Sonda.maxLag > 5000 ? '2' : Sonda.maxLag > 1000 ? '1' : '0';
+  $('g-lag-val').textContent = Math.round(lag) + ' ms';
+
+  // problemi
+  const prob = contaProblemi();
+  $('t-prob').textContent = prob;
+  $('tess-prob').dataset.allarme = prob > 0 ? (problemiGravi() ? '2' : '1') : '0';
+
+  // countdown
+  const resto = Math.max(0, cfg.durata - t);
+  const mm = String(Math.floor(resto / 60)).padStart(2, '0');
+  const ss = String(Math.floor(resto % 60)).padStart(2, '0');
+  $('conto').textContent = mm + ':' + ss;
+
+  if (t >= cfg.durata) fermaTest(false);
+}
+
+function contaProblemi() {
+  return Sonda.blocchi + Sonda.rallentamenti + Test.workerMorti + Gpu.contestiPersi + Test.erroriPagina + Test.discoErrori;
+}
+function problemiGravi() {
+  return (Sonda.blocchi + Test.workerMorti + Gpu.contestiPersi + Test.erroriPagina + Test.discoErrori) > 0;
+}
+
+/* ---------------- stop e verdetto ---------------- */
+function fermaTest(manuale) {
+  if (!Test.inCorso) return;
+  Test.inCorso = false;
+  Test.esitoManuale = manuale;
+  clearInterval(Test.timerCampione);
+  clearInterval(Test.timerSentinella);
+  Test.sentinella = null;
+  try { localStorage.removeItem(SENTINELLA); } catch (e) {}
+
+  Test.workers.forEach(w => { try { w.postMessage({ cmd: 'ferma' }); } catch (e) {} });
+  Test.workers = [];
+  if (Test.ramWorker) { try { Test.ramWorker.postMessage({ cmd: 'ferma' }); } catch (e) {} Test.ramWorker = null; }
+  if (Test.discoWorker) { try { Test.discoWorker.postMessage({ cmd: 'ferma' }); } catch (e) {} Test.discoWorker = null; }
+  Gpu.ferma();
+  if (Test.wakeLock) { try { Test.wakeLock.release(); } catch (e) {} Test.wakeLock = null; }
+
+  $('btn-ferma').style.display = 'none';
+  $('btn-nuovo').style.display = 'inline-block';
+  $('fase').textContent = manuale ? 'Test interrotto manualmente' : 'Test completato';
+  document.querySelector('.lampeggio').style.animation = 'none';
+
+  log(manuale ? 'Test interrotto manualmente.' : 'Test completato.', 'ok');
+  mostraVerdetto();
+}
+
+function mostraVerdetto() {
+  const durataEff = (performance.now() - Test.tAvvio) / 1000;
+  const motivi = [];
+  let livello = 'ok';
+
+  if (Sonda.blocchi > 0) {
+    livello = 'critico';
+    motivi.push('L\'interfaccia si è completamente congelata ' + Sonda.blocchi + ' volta/e (blocco più lungo: ' + (Sonda.maxBlocco / 1000).toFixed(1) + ' s).');
+  }
+  if (Test.workerMorti > 0) {
+    livello = 'critico';
+    motivi.push(Test.workerMorti + ' processo/i di calcolo sono morti o hanno smesso di rispondere sotto carico.');
+  }
+  if (Gpu.contestiPersi > 0) {
+    livello = 'critico';
+    motivi.push('Il driver della scheda video è andato in crash o si è ripristinato ' + Gpu.contestiPersi + ' volta/e.');
+  }
+  if (Test.erroriPagina > 0) {
+    livello = 'critico';
+    motivi.push(Test.erroriPagina + ' errore/i JavaScript imprevisti durante il carico.');
+  }
+  if (Test.discoErrori > 0) {
+    livello = 'critico';
+    motivi.push(Test.discoErrori + ' errore/i di scrittura su disco.');
+  }
+  if (livello === 'ok') {
+    // la soglia di tolleranza cresce con la durata: ~3 episodi ogni 10 minuti
+    const sogliaRallentamenti = Math.max(3, Math.round(Test.config.durata / 600 * 3));
+    if (Sonda.rallentamenti > sogliaRallentamenti || Sonda.maxLag > 3000) {
+      livello = 'avviso';
+      motivi.push('Rallentamenti marcati dell\'interfaccia (' + Sonda.rallentamenti + ' episodi oltre 1 s, picco ' + Math.round(Sonda.maxLag) + ' ms): possibile surriscaldamento o throttling.');
+    }
+    if (Test.config.ram && Test.ramLimite && Test.ramMB < Test.config.ramMB / 2) {
+      if (livello === 'ok') livello = 'avviso';
+      motivi.push('Il browser ha potuto allocare solo ' + Test.ramMB + ' MB dei ' + Test.config.ramMB + ' MB richiesti.');
+    }
+  }
+  if (motivi.length === 0) {
+    motivi.push('Nessun blocco, crash o errore rilevato per tutta la durata del test.');
+    if (Sonda.maxLag > 300) motivi.push('Lag massimo dell\'interfaccia: ' + Math.round(Sonda.maxLag) + ' ms — nella norma sotto carico pieno.');
+  }
+  if (Test.esitoManuale) motivi.push('Nota: il test è stato interrotto manualmente dopo ' + formattaTempo(durataEff) + ' (era previsto ' + formattaTempo(Test.config.durata) + ').');
+
+  const v = $('verdetto');
+  v.className = 'v-' + livello;
+  v.querySelector('.icona').textContent = livello === 'ok' ? '✅' : livello === 'avviso' ? '⚠️' : '❌';
+  v.querySelector('h3').textContent = livello === 'ok' ? 'STABILE' : livello === 'avviso' ? 'STABILE CON RISERVA' : 'INSTABILE';
+  v.querySelector('p').textContent =
+    livello === 'ok' ? 'Il computer ha retto il carico senza segni di cedimento.'
+    : livello === 'avviso' ? 'Il computer ha completato il test ma ha mostrato segnali da tenere d\'occhio.'
+    : 'Il computer ha mostrato problemi seri sotto carico.';
+
+  const ul = $('motivi');
+  ul.innerHTML = '';
+  motivi.forEach(m => { const li = document.createElement('li'); li.textContent = m; ul.appendChild(li); });
+
+  const media = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+  const righe = [
+    ['Durata effettiva', formattaTempo(durataEff)],
+    ['CPU — operazioni/s (media)', Test.config.cpu ? formattaNumero(media(Test.campioni.cpu)) : 'modulo non attivo'],
+    ['GPU — fotogrammi/s (media)', Test.config.gpu && Test.campioni.fps.length ? Math.round(media(Test.campioni.fps)) + ' fps' : 'modulo non attivo'],
+    ['RAM occupata (massimo)', Test.config.ram ? Test.ramMB + ' MB' : 'modulo non attivo'],
+    ['Lag massimo interfaccia', Math.round(Sonda.maxLag) + ' ms'],
+    ['Blocchi totali (> 5 s)', Sonda.blocchi],
+    ['Rallentamenti gravi (1–5 s)', Sonda.rallentamenti],
+    ['Errori (worker / GPU / pagina / disco)', Test.workerMorti + ' / ' + Gpu.contestiPersi + ' / ' + Test.erroriPagina + ' / ' + Test.discoErrori],
+  ];
+  const tab = $('riassunto');
+  tab.innerHTML = '';
+  righe.forEach(([k, val]) => {
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td'); td1.textContent = k;
+    const td2 = document.createElement('td'); td2.textContent = val;
+    tr.append(td1, td2); tab.appendChild(tr);
+  });
+
+  $('card-risultato').style.display = 'block';
+  $('card-risultato').scrollIntoView({ behavior: 'smooth' });
+
+  Test.ultimoReport = { livello, motivi, righe };
+}
+
+/* ---------------- report scaricabile ---------------- */
+function scaricaReport() {
+  const r = Test.ultimoReport;
+  if (!r) return;
+  const righeTxt = r.righe.map(([k, v]) => '  ' + k + ': ' + v).join('\n');
+  const eventiTxt = Test.eventi.map(e => '  [' + e.ora + '] (' + e.livello + ') ' + e.msg).join('\n');
+  const sistema = Object.entries(infoSistema()).map(([k, v]) => '  ' + k + ': ' + v).join('\n');
+  const txt =
+    'PCStress — report del test di stabilità\n' +
+    '=========================================\n' +
+    'Data: ' + new Date().toLocaleString('it-IT') + '\n\n' +
+    'VERDETTO: ' + (r.livello === 'ok' ? 'STABILE' : r.livello === 'avviso' ? 'STABILE CON RISERVA' : 'INSTABILE') + '\n' +
+    r.motivi.map(m => '  - ' + m).join('\n') + '\n\n' +
+    'Riepilogo\n---------\n' + righeTxt + '\n\n' +
+    'Sistema\n-------\n' + sistema + '\n\n' +
+    'Registro eventi\n---------------\n' + eventiTxt + '\n';
+  const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pcstress-report-' + new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19) + '.txt';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+/* ---------------- inizializzazione ---------------- */
+window.addEventListener('error', (e) => {
+  if (Test.inCorso) {
+    Test.erroriPagina++;
+    log('ERRORE pagina: ' + e.message, 'critico');
+  }
+});
+window.addEventListener('unhandledrejection', (e) => {
+  if (Test.inCorso) {
+    Test.erroriPagina++;
+    log('ERRORE (promise): ' + String(e.reason).slice(0, 200), 'critico');
+  }
+});
+window.addEventListener('beforeunload', (e) => {
+  if (Test.inCorso) { e.preventDefault(); e.returnValue = ''; }
+});
+window.addEventListener('pagehide', () => {
+  // pagehide scatta su chiusura/navigazione volontaria ma NON su crash,
+  // blackout o blocco totale: permette di distinguere i due casi al riavvio
+  if (Test.inCorso && Test.sentinella) {
+    try {
+      Test.sentinella.chiusuraPagina = Date.now();
+      localStorage.setItem(SENTINELLA, JSON.stringify(Test.sentinella));
+    } catch (e) {}
+  }
+});
+document.addEventListener('visibilitychange', async () => {
+  if (!Test.inCorso) return;
+  // in entrambe le direzioni: il primo tick dopo il cambio porta con sé il
+  // ritardo del throttling del browser e non va contato come blocco
+  Sonda.saltaProssimo = true;
+  rinfrescaBattiti();
+  if (document.visibilityState === 'hidden') {
+    log('Scheda in secondo piano: le misure di reattività e GPU sono sospese — riportala in primo piano', 'avviso');
+  } else {
+    log('Scheda di nuovo in primo piano: misure riprese');
+    try {
+      if (navigator.wakeLock && !Test.wakeLock) Test.wakeLock = await navigator.wakeLock.request('screen');
+    } catch (e) {}
+  }
+});
+
+$('btn-avvia').addEventListener('click', avviaTest);
+$('btn-ferma').addEventListener('click', () => fermaTest(true));
+$('btn-nuovo').addEventListener('click', () => {
+  $('card-stato').style.display = 'none';
+  $('card-risultato').style.display = 'none';
+  $('card-config').style.display = 'block';
+  $('btn-nuovo').style.display = 'none';
+  document.querySelector('.lampeggio').style.animation = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+$('btn-report').addEventListener('click', scaricaReport);
+
+// disco: richiede un contesto sicuro del browser (https, localhost o file
+// locale); NON è disponibile aprendo la pagina da un altro PC via http://<ip>
+if (!(navigator.storage && navigator.storage.getDirectory)) {
+  $('chk-disco').checked = false;
+  $('chk-disco').disabled = true;
+  $('lbl-disco').classList.add('disab');
+  $('lbl-disco').title = 'Non disponibile su questo indirizzo: funziona aprendo la pagina da http://localhost sul PC che fa da server, o dal file locale';
+}
+
+// sentinella: il test precedente è finito male?
+try {
+  const s = JSON.parse(localStorage.getItem(SENTINELLA) || 'null');
+  if (s && s.inizio) {
+    // una scheda nascosta aggiorna il battito anche solo 1 volta/min:
+    // sotto i 70 s la chiave può appartenere a un test VIVO in un'altra
+    // scheda, quindi non va né segnalata né cancellata
+    const eta = Date.now() - (s.ultimoSegnale || s.inizio);
+    if (eta > 70000) {
+      localStorage.removeItem(SENTINELLA);
+      const b = $('banner-crash');
+      if (s.chiusuraPagina) {
+        // la pagina è stata chiusa volontariamente: nota, non allarme
+        b.style.borderColor = 'var(--stato-avviso)';
+        b.style.background = 'rgba(250,178,25,0.10)';
+        b.textContent = 'ℹ Il test precedente è stato interrotto chiudendo la pagina prima della fine (nessun crash rilevato).';
+        b.style.display = 'block';
+      } else {
+        $('banner-crash-dett').textContent =
+          ' Era iniziato alle ' + new Date(s.inizio).toLocaleTimeString('it-IT') +
+          '; ultimo segnale di vita alle ' + new Date(s.ultimoSegnale || s.inizio).toLocaleTimeString('it-IT') + '.';
+        b.style.display = 'block';
+      }
+    }
+  }
+} catch (e) {}
+
+infoSistema();
+</script>
+</body>
+</html>
